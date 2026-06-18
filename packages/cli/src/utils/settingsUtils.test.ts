@@ -5,6 +5,7 @@
  */
 
 import { describe, it, expect } from 'vitest';
+import { SettingScope } from '../config/settings.js';
 import {
   // Schema utilities
   getSettingsByCategory,
@@ -34,6 +35,8 @@ import {
   isDefaultValue,
   isValueInherited,
   getEffectiveDisplayValue,
+  setNestedPropertySafe,
+  setNestedPropertyForce,
 } from './settingsUtils.js';
 import {
   getSettingsSchema,
@@ -467,6 +470,98 @@ describe('SettingsUtils', () => {
 
         expect(dialogKeys.length).toBeLessThan(allKeys.length);
         expect(dialogKeys.length).toBeGreaterThan(0);
+      });
+
+      it('should filter out userOnly settings when scope is Workspace', () => {
+        vi.mocked(getSettingsSchema).mockReturnValue({
+          general: {
+            type: 'object',
+            label: 'General',
+            category: 'General',
+            requiresRestart: false,
+            default: {},
+            description: 'General settings.',
+            showInDialog: false,
+            properties: {
+              vimMode: {
+                type: 'boolean',
+                label: 'Vim Mode',
+                category: 'General',
+                requiresRestart: false,
+                default: false,
+                description: 'Enable Vim keybindings',
+                showInDialog: true,
+                userOnly: false,
+              },
+              enableFortunes: {
+                type: 'boolean',
+                label: 'Enable Fortunes',
+                category: 'General',
+                requiresRestart: false,
+                default: false,
+                description: 'Enable fortune quotes',
+                showInDialog: true,
+                userOnly: true,
+              },
+            },
+          },
+        } as unknown as SettingsSchemaType);
+
+        // In User scope, both settings should be included
+        const userKeys = getDialogSettingKeys(SettingScope.User);
+        expect(userKeys).toContain('general.vimMode');
+        expect(userKeys).toContain('general.enableFortunes');
+
+        // In Workspace scope, userOnly settings should be filtered out
+        const workspaceKeys = getDialogSettingKeys(SettingScope.Workspace);
+        expect(workspaceKeys).toContain('general.vimMode');
+        expect(workspaceKeys).not.toContain('general.enableFortunes');
+      });
+
+      it('should handle nested userOnly settings when scope is Workspace', () => {
+        vi.mocked(getSettingsSchema).mockReturnValue({
+          ui: {
+            type: 'object',
+            label: 'UI',
+            category: 'UI',
+            requiresRestart: false,
+            default: {},
+            description: 'UI settings.',
+            showInDialog: false,
+            properties: {
+              theme: {
+                type: 'string',
+                label: 'Theme',
+                category: 'UI',
+                requiresRestart: false,
+                default: 'default',
+                description: 'UI theme',
+                showInDialog: true,
+                userOnly: false,
+              },
+              fortuneCommand: {
+                type: 'string',
+                label: 'Fortune Command',
+                category: 'UI',
+                requiresRestart: false,
+                default: 'fortune -s',
+                description: 'Command for fortune quotes',
+                showInDialog: true,
+                userOnly: true,
+              },
+            },
+          },
+        } as unknown as SettingsSchemaType);
+
+        // In User scope, both settings should be included
+        const userKeys = getDialogSettingKeys(SettingScope.User);
+        expect(userKeys).toContain('ui.theme');
+        expect(userKeys).toContain('ui.fortuneCommand');
+
+        // In Workspace scope, userOnly settings should be filtered out
+        const workspaceKeys = getDialogSettingKeys(SettingScope.Workspace);
+        expect(workspaceKeys).toContain('ui.theme');
+        expect(workspaceKeys).not.toContain('ui.fortuneCommand');
       });
 
       it('should handle nested settings display correctly', () => {
@@ -1149,6 +1244,54 @@ describe('SettingsUtils', () => {
         );
         expect(result).toBe(false); // Default value
       });
+    });
+  });
+});
+
+describe('setNestedProperty prototype-pollution guards', () => {
+  // After each test, assert global Object.prototype was not polluted.
+  const assertNoPollution = () => {
+    expect(({} as Record<string, unknown>)['polluted']).toBeUndefined();
+    expect(
+      (Object.prototype as Record<string, unknown>)['polluted'],
+    ).toBeUndefined();
+  };
+
+  describe('setNestedPropertySafe', () => {
+    it('writes a normal dotted path', () => {
+      const obj: Record<string, unknown> = {};
+      setNestedPropertySafe(obj, 'a.b.c', 1);
+      const a = obj['a'] as Record<string, Record<string, unknown>>;
+      expect(a['b']['c']).toBe(1);
+    });
+
+    it('refuses a __proto__ segment (no pollution, no write)', () => {
+      const obj: Record<string, unknown> = {};
+      setNestedPropertySafe(obj, '__proto__.polluted', 'yes');
+      assertNoPollution();
+      expect(Object.keys(obj)).toEqual([]);
+    });
+
+    it('refuses constructor / prototype segments', () => {
+      const obj: Record<string, unknown> = {};
+      setNestedPropertySafe(obj, 'constructor.prototype.polluted', 'yes');
+      setNestedPropertySafe(obj, 'foo.prototype.polluted', 'yes');
+      assertNoPollution();
+    });
+  });
+
+  describe('setNestedPropertyForce', () => {
+    it('writes a normal dotted path', () => {
+      const obj: Record<string, unknown> = {};
+      setNestedPropertyForce(obj, 'x.y', 2);
+      expect((obj['x'] as Record<string, unknown>)['y']).toBe(2);
+    });
+
+    it('refuses a __proto__ segment (no pollution, no write)', () => {
+      const obj: Record<string, unknown> = {};
+      setNestedPropertyForce(obj, '__proto__.polluted', 'yes');
+      assertNoPollution();
+      expect(Object.keys(obj)).toEqual([]);
     });
   });
 });

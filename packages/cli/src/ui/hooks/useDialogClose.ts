@@ -8,12 +8,6 @@ import { useCallback } from 'react';
 import { SettingScope } from '../../config/settings.js';
 import type { AuthType, ApprovalMode } from '@qwen-code/qwen-code-core';
 import type { ArenaDialogType } from './useArenaCommand.js';
-// OpenAICredentials type (previously imported from OpenAIKeyPrompt)
-interface OpenAICredentials {
-  apiKey: string;
-  baseUrl?: string;
-  model?: string;
-}
 
 export interface DialogCloseOptions {
   // Theme dialog
@@ -29,10 +23,7 @@ export interface DialogCloseOptions {
 
   // Auth dialog
   isAuthDialogOpen: boolean;
-  handleAuthSelect: (
-    authType: AuthType | undefined,
-    credentials?: OpenAICredentials,
-  ) => Promise<void>;
+  closeAuthDialog: () => void;
   pendingAuthType: AuthType | undefined;
 
   // Editor dialog
@@ -73,6 +64,9 @@ export interface DialogCloseOptions {
   // Diff dialog
   isDiffDialogOpen?: boolean;
   closeDiffDialog?: () => void;
+
+  isStatsDialogOpen?: boolean;
+  closeStatsDialog?: () => void;
 
   // Worktree exit dialog (Phase C)
   showWorktreeExitDialog?: boolean;
@@ -153,6 +147,11 @@ export function useDialogClose(options: DialogCloseOptions) {
     // priority dialogs in `DialogManager` (theme, auth, settings, …)
     // already appear above this block in their own priority order. Only
     // the diff-vs-background pair previously matched the wrong way.
+    if (options.isStatsDialogOpen && options.closeStatsDialog) {
+      options.closeStatsDialog();
+      return true;
+    }
+
     if (options.isDiffDialogOpen && options.closeDiffDialog) {
       // /diff dialog — same rationale as the background-tasks dialog:
       // Ctrl+C should dismiss the dialog rather than fall through to the
